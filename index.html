@@ -1,0 +1,529 @@
+﻿<!DOCTYPE html>
+
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Survival Arena 3D</title>
+
+<style>
+body{margin:0;overflow:hidden;background:#020617;font-family:Arial;color:white}
+
+#hud{
+position:absolute;
+top:10px;
+left:50%;
+transform:translateX(-50%);
+display:flex;
+gap:20px;
+background:rgba(0,0,0,0.4);
+padding:10px 20px;
+border-radius:10px;
+box-shadow:0 0 10px cyan;
+z-index:5
+}
+
+#minimap{
+position:absolute;
+top:10px;
+right:10px;
+width:180px;
+height:180px;
+border:2px solid cyan;
+border-radius:10px;
+background:rgba(0,0,0,0.5);
+z-index:5
+}
+
+#joy{
+position:absolute;
+bottom:40px;
+left:50%;
+transform:translateX(-50%);
+width:160px;
+height:160px;
+z-index:5
+}
+</style>
+
+</head>
+
+<body>
+
+<div id="hud">
+<div>Score: <span id="score">0</span></div>
+<div>Health: <span id="health">100</span></div>
+</div>
+
+<canvas id="minimap"></canvas>
+
+<div id="joy"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+
+<script src="https://cdn.jsdelivr.net/npm/nipplejs@0.9.0/dist/nipplejs.min.js"></script>
+
+<script>
+
+/* ---------- THREE SETUP ---------- */
+
+const scene=new THREE.Scene()
+
+const camera=new THREE.PerspectiveCamera(
+70,
+window.innerWidth/window.innerHeight,
+0.1,
+5000
+)
+
+const renderer=new THREE.WebGLRenderer({antialias:true})
+renderer.setSize(window.innerWidth,window.innerHeight)
+document.body.appendChild(renderer.domElement)
+
+scene.add(new THREE.AmbientLight(0x404040))
+
+const light=new THREE.PointLight(0xffffff,1.2)
+light.position.set(200,300,200)
+scene.add(light)
+
+/* ---------- ARENA ---------- */
+
+const arenaSize=2000
+
+const floor=new THREE.Mesh(
+new THREE.PlaneGeometry(arenaSize,arenaSize,40,40),
+new THREE.MeshStandardMaterial({
+color:0x050520,
+wireframe:true,
+emissive:0x00ffff
+})
+)
+
+floor.rotation.x=-Math.PI/2
+scene.add(floor)
+
+/* ---------- PLAYER ---------- */
+
+const player=new THREE.Mesh(
+new THREE.SphereGeometry(12,32,32),
+new THREE.MeshStandardMaterial({
+color:0x00ffff,
+emissive:0x008888
+})
+)
+
+player.position.y=12
+scene.add(player)
+
+let health=100
+let score=0
+let fireAura=0
+
+/* ---------- TRAIL ---------- */
+
+let trails=[]
+
+function spawnTrail(){
+
+const t=new THREE.Mesh(
+new THREE.SphereGeometry(5,6,6),
+new THREE.MeshBasicMaterial({
+color:0x00ffff,
+transparent:true,
+opacity:0.5
+})
+)
+
+t.position.copy(player.position)
+scene.add(t)
+
+trails.push({mesh:t,life:60})
+
+}
+
+/* ---------- ENEMIES ---------- */
+
+let enemies=[]
+
+function spawnEnemy(){
+
+const enemy=new THREE.Mesh(
+new THREE.SphereGeometry(12,16,16),
+new THREE.MeshStandardMaterial({
+color:0xff004c,
+emissive:0x440011
+})
+)
+
+enemy.position.set(
+(Math.random()-0.5)*1800,
+12,
+(Math.random()-0.5)*1800
+)
+
+enemy.userData.speed=1+Math.random()
+
+scene.add(enemy)
+enemies.push(enemy)
+
+}
+
+setInterval(spawnEnemy,1500)
+
+/* ---------- POWERUPS ---------- */
+
+let powerups=[]
+
+function spawnPowerup(){
+
+const types=["fire","health"]
+const type=types[Math.floor(Math.random()*types.length)]
+
+let mesh
+
+if(type==="fire"){
+
+mesh=new THREE.Mesh(
+new THREE.SphereGeometry(10,16,16),
+new THREE.MeshStandardMaterial({color:0xff6600,emissive:0xff2200})
+)
+
+}else{
+
+mesh=new THREE.Mesh(
+new THREE.TorusGeometry(8,3,12,30),
+new THREE.MeshStandardMaterial({color:0xff4444,emissive:0xaa0000})
+)
+
+}
+
+mesh.position.set(
+(Math.random()-0.5)*1500,
+20,
+(Math.random()-0.5)*1500
+)
+
+mesh.userData.type=type
+
+scene.add(mesh)
+powerups.push(mesh)
+
+}
+
+setInterval(spawnPowerup,6000)
+
+/* ---------- BULLETS ---------- */
+
+let bullets=[]
+
+document.addEventListener("click",()=>{
+
+if(enemies.length===0)return
+
+let target=enemies[0]
+
+let dir=new THREE.Vector3()
+dir.subVectors(target.position,player.position).normalize()
+
+const bullet=new THREE.Mesh(
+new THREE.SphereGeometry(4,8,8),
+new THREE.MeshBasicMaterial({color:0xfacc15})
+)
+
+bullet.position.copy(player.position)
+
+bullet.userData.vel=dir.multiplyScalar(12)
+
+scene.add(bullet)
+bullets.push(bullet)
+
+})
+
+/* ---------- PARTICLES ---------- */
+
+let particles=[]
+
+function explosion(pos){
+
+for(let i=0;i<15;i++){
+
+const p=new THREE.Mesh(
+new THREE.SphereGeometry(3,6,6),
+new THREE.MeshBasicMaterial({color:0xff00ff})
+)
+
+p.position.copy(pos)
+
+p.userData={
+dx:(Math.random()-0.5)*8,
+dy:Math.random()*4,
+dz:(Math.random()-0.5)*8,
+life:40
+}
+
+scene.add(p)
+particles.push(p)
+
+}
+
+}
+
+/* ---------- CONTROLS ---------- */
+
+let keys={}
+addEventListener("keydown",e=>keys[e.key]=true)
+addEventListener("keyup",e=>keys[e.key]=false)
+
+/* ---------- JOYSTICK ---------- */
+
+let joyX=0
+let joyY=0
+
+const joystick=nipplejs.create({
+zone:document.getElementById("joy"),
+mode:"static",
+position:{left:"50%",top:"50%"},
+color:"cyan",
+size:120
+})
+
+joystick.on("move",(evt,data)=>{
+if(data.vector){
+joyX=data.vector.x
+joyY=-data.vector.y
+}
+})
+
+joystick.on("end",()=>{
+joyX=0
+joyY=0
+})
+
+/* ---------- MOVEMENT ---------- */
+
+let moveDir=new THREE.Vector3()
+
+function movePlayer(){
+
+let speed=4
+
+moveDir.set(0,0,0)
+
+if(keys["w"])moveDir.z-=1
+if(keys["s"])moveDir.z+=1
+if(keys["a"])moveDir.x-=1
+if(keys["d"])moveDir.x+=1
+
+moveDir.x+=joyX
+moveDir.z+=joyY
+
+if(moveDir.length()>0){
+
+moveDir.normalize()
+
+player.position.x+=moveDir.x*speed
+player.position.z+=moveDir.z*speed
+
+}
+
+}
+
+/* ---------- CAMERA ---------- */
+
+function updateCamera(){
+
+const offset=new THREE.Vector3(
+-moveDir.x*120,
+80,
+-moveDir.z*120
+)
+
+camera.position.lerp(
+new THREE.Vector3(
+player.position.x+offset.x,
+player.position.y+offset.y,
+player.position.z+offset.z
+),
+0.08
+)
+
+camera.lookAt(player.position)
+
+}
+
+/* ---------- MINIMAP ---------- */
+
+const minimap=document.getElementById("minimap")
+const mctx=minimap.getContext("2d")
+minimap.width=180
+minimap.height=180
+
+function drawMinimap(){
+
+mctx.clearRect(0,0,180,180)
+
+const scale=180/arenaSize
+
+let px=player.position.x*scale+90
+let py=player.position.z*scale+90
+
+mctx.fillStyle="cyan"
+mctx.beginPath()
+mctx.arc(px,py,4,0,Math.PI*2)
+mctx.fill()
+
+mctx.fillStyle="red"
+enemies.forEach(e=>{
+let x=e.position.x*scale+90
+let y=e.position.z*scale+90
+mctx.fillRect(x,y,3,3)
+})
+
+mctx.fillStyle="yellow"
+powerups.forEach(p=>{
+let x=p.position.x*scale+90
+let y=p.position.z*scale+90
+mctx.fillRect(x,y,3,3)
+})
+
+}
+
+/* ---------- UPDATE ---------- */
+
+function update(){
+
+movePlayer()
+
+spawnTrail()
+
+/* trail fade */
+
+trails.forEach((t,i)=>{
+t.life--
+t.mesh.material.opacity=t.life/60
+if(t.life<=0){
+scene.remove(t.mesh)
+trails.splice(i,1)
+}
+})
+
+/* enemies */
+
+enemies.forEach((e,i)=>{
+
+let dir=new THREE.Vector3()
+dir.subVectors(player.position,e.position).normalize()
+
+e.position.add(dir.multiplyScalar(e.userData.speed))
+
+let dist=e.position.distanceTo(player.position)
+
+if(dist<20){
+
+health-=10
+document.getElementById("health").innerText=health
+
+scene.remove(e)
+enemies.splice(i,1)
+
+if(health<=0){
+alert("Game Over")
+location.reload()
+}
+
+}
+
+})
+
+/* bullets */
+
+bullets.forEach((b,bi)=>{
+
+b.position.add(b.userData.vel)
+
+enemies.forEach((e,ei)=>{
+
+if(b.position.distanceTo(e.position)<16){
+
+explosion(e.position)
+
+scene.remove(e)
+scene.remove(b)
+
+enemies.splice(ei,1)
+bullets.splice(bi,1)
+
+score+=20
+document.getElementById("score").innerText=score
+
+}
+
+})
+
+})
+
+/* particles */
+
+particles.forEach((p,i)=>{
+
+p.position.x+=p.userData.dx
+p.position.y+=p.userData.dy
+p.position.z+=p.userData.dz
+
+p.userData.life--
+
+if(p.userData.life<=0){
+scene.remove(p)
+particles.splice(i,1)
+}
+
+})
+
+/* powerups */
+
+powerups.forEach((p,i)=>{
+
+p.rotation.x+=0.05
+p.rotation.y+=0.05
+
+if(p.position.distanceTo(player.position)<25){
+
+if(p.userData.type==="health"){
+health=Math.min(100,health+10)
+document.getElementById("health").innerText=health
+}
+
+if(p.userData.type==="fire"){
+fireAura=300
+}
+
+scene.remove(p)
+powerups.splice(i,1)
+
+}
+
+})
+
+drawMinimap()
+
+updateCamera()
+
+}
+
+/* ---------- LOOP ---------- */
+
+function animate(){
+
+requestAnimationFrame(animate)
+
+update()
+
+renderer.render(scene,camera)
+
+}
+
+animate()
+
+</script>
+
+</body>
+</html>
